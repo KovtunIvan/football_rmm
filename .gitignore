@@ -1,0 +1,44 @@
+# Файлы, создаваемые текстовыми редакторами
+.idea
+*.sublime-project
+*.sublime-workspace
+*.orig
+*.bak
+
+# Файлы системы
+/bitrix/
+/upload/
+.DS_Store
+Thumbs.db
+.bash_logout
+.bashrc
+.profile
+web.config
+/vendor/
+/vendor
+
+# Архивы
+*.tar.gz*
+*.tar
+*.zip
+*.7z
+*.cab
+*.exe
+*.rar
+*.pak
+*.zipx
+
+# Текстовые и прочие файлы в том числе файлы бд
+*.xml
+*.txt
+*.dt
+*.psd
+*.pdf
+*.log
+test.php
+*.sql
+!/backups/*.sql
+!/i/robots.txt
+
+# Исключения для композера
+composer.phar
