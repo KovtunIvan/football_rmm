@@ -1,4 +1,4 @@
--<?php
+<?php
 
 
 use Slack\Message\Attachment;
@@ -44,6 +44,7 @@ class Slack
     {
         $client = $this->client;
         $slackApiClient = $this->slackApiClient;
+        $csv = $this->csv;
 
 
         $client->on('reaction_added', function ($data) use ($client, $slackApiClient) {
@@ -86,8 +87,8 @@ class Slack
         });
 
 
-        $client->on('message', function ($data) use ($client, $slackApiClient) {
-            $slackApiClient->chat->postMessage(array(
+        $client->on('message', function ($data) use ($client, $slackApiClient,$csv) {
+            /*$slackApiClient->chat->postMessage(array(
                     "channel" => "GC66DNNKS",
                     "parse" => "full",
                     "link_names" => 1,
@@ -100,8 +101,13 @@ class Slack
                     "unfurl_media" => false
 
                 )
-            );
+            );*/
+            $flag = $this->inUserExist($csv,$data);
 
+            if (!isset($flag)) {
+                $this->addNewUser($data, $slackApiClient);
+            }
+            var_dump($csv);
 
             if ($data['text'] == "!rating") {
                 $this->showRating($data, $this->csv);
@@ -118,6 +124,25 @@ class Slack
             }
         });
         $this->loop->run();
+    }
+
+    public function inUserExist($csv,$data){
+        foreach ($csv as $key => $value) {
+            $playerData = explode(';', $value[0]);
+            if (in_array($data['user'], $playerData)) {
+                $flag = false;
+            }
+        }
+        return $flag;
+    }
+
+    public function addNewUser($data, $slackApiClient)
+    {
+        $user = $slackApiClient->users->info(array("user" => $data['user'])); // имя юзера
+        $dataString = $data['user'] . ';' . $user["user"]["real_name"] . ';' . '0' . ';' . '0';
+        $fp = fopen("table.csv", "a");
+        fwrite($fp, "\r\n" . $dataString);
+        fclose($fp);
     }
 
     public function saveForDB($csv)
