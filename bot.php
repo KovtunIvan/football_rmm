@@ -1,4 +1,4 @@
-<?php
+-<?php
 
 
 use Slack\Message\Attachment;
@@ -20,7 +20,10 @@ class Slack
 
     private $amountOfPlayers;
 
+    private $amountOfWinners;
+
     private $players;
+
 
     public function __construct()
     {
@@ -33,6 +36,8 @@ class Slack
         $this->players = [];
         $this->status = "false";
         $this->amountOfPlayers = "0";
+        $this->amountOfWinners = "0";
+
     }
 
     public function init()
@@ -42,19 +47,51 @@ class Slack
         $csv = $this->csv;
 
 
+        $amountOfWinners = $this->amountOfWinners;
+        $players = $this->players;
+        $client->on('reaction_added', function ($data) use ($client, $slackApiClient, $amountOfWinners, $players, $csv) {
+            echo "data: " . $data['reaction'] . $data['item_user'] . "\n";
+            if ($this->amountOfWinners > 0) {
+                echo "got >0";
+                if ($data['reaction'] == 'muscle') {
+                    echo "got reaction";
+                    echo $this->players[0];
+                    if (in_array($data['item_user'], $this->players)) {
+                        echo "got players";
+                        echo $this->amountOfWinners;
+                        echo $this->players[0];
+                        $this->addWin($csv, $data['item_user']);
+                        unset($this->players[array_search($data['item_user'], $this->players)]);
+                        $this->amountOfWinners--;
+                        echo $this->amountOfWinners;
+                        echo '<pre>', var_dump($this->players), '</pre>';
+                        $client->getChannelGroupOrDMByID($data['channel'])->then(function ($channel) use ($client, $data) {
+                            $message = $client->getMessageBuilder()
+                                ->addAttachment(new Attachment('', "нужно еще $this->amountOfPlayers", null, "#c4c4c4"))
+                                ->setChannel($channel)
+                                ->create();
+                            $client->postMessage($message);
+                        });
+
+                    }
+                }
+            }
+        });
+
         $client->on('message', function ($data) use ($client, $slackApiClient, $csv) {
 
-            if ($data['text'] == "rating") {
-                $this->showRating($data, $csv);
+
+            if ($data['text'] == "!rating") {
+                $this->showRating($data, $this->csv);
             }
-            if (stristr($data['text'], 'rating <@')) {
+            if (stripos($data['text'], '!rating <@') === 0) {
                 $this->showRatingByUser($data, $this->csv, $slackApiClient);
                 $this->addWin($this->csv, $data['user']);
             }
             if (stripos($data['text'], '+') === 0) {
                 $this->addPlayersToGame($data);
             }
-            if (stripos($data['text'], '!match') === 0){
+            if (stripos($data['text'], '!match') === 0) {
                 $this->startGame($data);
             }
         });
@@ -74,26 +111,26 @@ class Slack
 
     public function addWin($csv, $id)
     {
-        foreach ($csv as $item) {
-                $playerData = explode(';', $item[0]);
-                if ($playerData[0] == $id) {
-                    $playerData[2]++;
-                    $savedItem = implode(';', $playerData);
-                }
-                $csv[key($csv)] = (array)$savedItem;
+        foreach ($csv as $key => $value) {
+            $playerData = explode(';', $value[0]);
+            if ($playerData[0] == $id) {
+                $playerData[2]++;
+                $savedItem = implode(';', $playerData);
+                $csv[$key] = (array)$savedItem;
             }
+        }
         $this->saveForDB($csv);
     }
 
     public function addLose($csv, $id)
     {
-        foreach ($csv as $item) {
-            $playerData = explode(';', $item[0]);
+        foreach ($csv as $key => $value) {
+            $playerData = explode(';', $value[0]);
             if ($playerData[0] == $id) {
                 $playerData[2]--;
                 $savedItem = implode(';', $playerData);
+                $csv[$key] = (array)$savedItem;
             }
-            $csv[key($csv)] = (array)$savedItem;
         }
         $this->saveForDB($csv);
 
@@ -148,11 +185,9 @@ class Slack
 
         $client = $this->client;
         $slackApiClient = $this->slackApiClient;
-        $players = $this->players;
-        $amountOfPlayers = $this->amountOfPlayers;
-        $status=$this->status;
 
-        switch ($status) {
+
+        switch ($this->status) {
             case "onair":
                 $user = $slackApiClient->users->info(array("user" => $data['user']));
                 $client->getChannelGroupOrDMByID($data['channel'])->then(function ($channel) use ($client, $data, $user) {
@@ -164,22 +199,22 @@ class Slack
                 });
                 break;
             case "waiting":
-                if (!in_array($data['user'], $players)) {
-                    $players[] = $data['user'];
-                    $amountOfPlayers--;
-                    if ($amountOfPlayers > 0) {
+                if (!in_array($data['user'], $this->players)) {
+                    $this->players[] = $data['user'];
+                    $this->amountOfPlayers--;
+                    if ($this->amountOfPlayers > 0) {
                         $this->status = "waiting";
                         $user = $slackApiClient->users->info(array("user" => $data['user']));
-                        $client->getChannelGroupOrDMByID($data['channel'])->then(function ($channel) use ($client, $data, $user, $amountOfPlayers) {
+                        $client->getChannelGroupOrDMByID($data['channel'])->then(function ($channel) use ($client, $data, $user) {
                             $message = $client->getMessageBuilder()
                                 ->addAttachment(new Attachment('', $user["user"]["real_name"] . " вступает в игру!", null, "#36a64f"))
                                 ->setChannel($channel)
                                 ->create();
                             $client->postMessage($message);
                         });
-                        $client->getChannelGroupOrDMByID($data['channel'])->then(function ($channel) use ($client, $data, $user, $amountOfPlayers) {
+                        $client->getChannelGroupOrDMByID($data['channel'])->then(function ($channel) use ($client, $data, $user) {
                             $message = $client->getMessageBuilder()
-                                ->addAttachment(new Attachment('', "нужно еще $amountOfPlayers", null, "#c4c4c4"))
+                                ->addAttachment(new Attachment('', "нужно еще $this->amountOfPlayers" . count($this->players), null, "#c4c4c4"))
                                 ->setChannel($channel)
                                 ->create();
                             $client->postMessage($message);
@@ -187,14 +222,14 @@ class Slack
                     } else {
                         $this->status = "onair";
                         $user = $slackApiClient->users->info(array("user" => $data['user']));
-                        $client->getChannelGroupOrDMByID($data['channel'])->then(function ($channel) use ($client, $data, $user, $amountOfPlayers) {
+                        $client->getChannelGroupOrDMByID($data['channel'])->then(function ($channel) use ($client, $data, $user) {
                             $message = $client->getMessageBuilder()
                                 ->addAttachment(new Attachment('', $user["user"]["real_name"] . " вступает в игру!", null, "#36a64f"))
                                 ->setChannel($channel)
                                 ->create();
                             $client->postMessage($message);
                         });
-                        $client->getChannelGroupOrDMByID($data['channel'])->then(function ($channel) use ($client, $data, $amountOfPlayers) {
+                        $client->getChannelGroupOrDMByID($data['channel'])->then(function ($channel) use ($client, $data) {
                             $message = $client->getMessageBuilder()
                                 ->addAttachment(new Attachment('', "Да начнется битва!", null, "#36a64f"))
                                 ->setChannel($channel)
@@ -213,7 +248,6 @@ class Slack
 
         $client = $this->client;
         $slackApiClient = $this->slackApiClient;
-        $players = $this->players;
         $status = $this->status;
 
 
@@ -221,22 +255,22 @@ class Slack
             $msg = explode('h', $data['text']);
             switch ($msg[1]) {
                 case 2:
-                    $amountOfPlayers = "2";
+                    $this->amountOfPlayers = "2";
                     $this->status = "waiting";
                     break;
                 case 4:
-                    $amountOfPlayers = "4";
+                    $this->amountOfPlayers = "4";
                     $this->status = "waiting";
                     break;
                 default;
-                    $amountOfPlayers = " укажите кол-во игроков (2 или 4), например !match4";
+                    $this->amountOfPlayers = " укажите кол-во игроков (2 или 4), например !match4";
                     $this->status = "false";
                     break;
             }
             switch ($this->status) {
                 case "false":
                     $user = $slackApiClient->users->info(array("user" => $data['user']));
-                    $client->getChannelGroupOrDMByID($data['channel'])->then(function ($channel) use ($client, $data, $user, $amountOfPlayers) {
+                    $client->getChannelGroupOrDMByID($data['channel'])->then(function ($channel) use ($client, $data, $user) {
                         $message = $client->getMessageBuilder()
 //                ->addAttachment(new Attachment('My Attachment', 'attachment text', null, "#36a64f"))
                             ->addAttachment(new Attachment('', $user["user"]["real_name"] . "," . $this->amountOfPlayers, null, "#a63639"))
@@ -246,20 +280,22 @@ class Slack
                     });
                     break;
                 case "waiting":
-                    $players[] = $data['user'];
+                    echo $data['user'];
+                    $this->players[] = $data['user'];
+                    $this->amountOfWinners = $this->amountOfPlayers / 2;
                     $user = $slackApiClient->users->info(array("user" => $data['user']));
-                    $client->getChannelGroupOrDMByID($data['channel'])->then(function ($channel) use ($client, $data, $user, $amountOfPlayers) {
+                    $client->getChannelGroupOrDMByID($data['channel'])->then(function ($channel) use ($client, $data, $user) {
                         $message = $client->getMessageBuilder()
-                            ->addAttachment(new Attachment('', $user["user"]["real_name"] . " собирает игру на $amountOfPlayers игроков!", null, "#36a64f"))
+                            ->addAttachment(new Attachment('', $user["user"]["real_name"] . " собирает игру на $this->amountOfPlayers игроков!", null, "#36a64f"))
 //                ->addAttachment(new Attachment('', 'attachment text', null, "#a63639"))
                             ->setChannel($channel)
                             ->create();
                         $client->postMessage($message);
                     });
-                    $amountOfPlayers--;
-                    $client->getChannelGroupOrDMByID($data['channel'])->then(function ($channel) use ($client, $data, $user, $amountOfPlayers) {
+                    $this->amountOfPlayers--;
+                    $client->getChannelGroupOrDMByID($data['channel'])->then(function ($channel) use ($client, $data, $user) {
                         $message = $client->getMessageBuilder()
-                            ->addAttachment(new Attachment('', "нужно еще $amountOfPlayers", null, "#c4c4c4"))
+                            ->addAttachment(new Attachment('', "нужно еще $this->amountOfPlayers" . count($this->players), null, "#c4c4c4"))
 //                ->addAttachment(new Attachment('', 'attachment text', null, "#a63639"))
                             ->setChannel($channel)
                             ->create();
