@@ -44,12 +44,9 @@ class Slack
     {
         $client = $this->client;
         $slackApiClient = $this->slackApiClient;
-        $csv = $this->csv;
 
 
-        $amountOfWinners = $this->amountOfWinners;
-        $players = $this->players;
-        $client->on('reaction_added', function ($data) use ($client, $slackApiClient, $amountOfWinners, $players, $csv) {
+        $client->on('reaction_added', function ($data) use ($client, $slackApiClient) {
             echo "data: " . $data['reaction'] . $data['item_user'] . "\n";
             if ($this->amountOfWinners > 0) {
                 echo "got >0";
@@ -60,25 +57,50 @@ class Slack
                         echo "got players";
                         echo $this->amountOfWinners;
                         echo $this->players[0];
-                        $this->addWin($csv, $data['item_user']);
+                        $this->addWin($this->csv, $data['item_user']);
                         unset($this->players[array_search($data['item_user'], $this->players)]);
                         $this->amountOfWinners--;
                         echo $this->amountOfWinners;
                         echo '<pre>', var_dump($this->players), '</pre>';
-                        $client->getChannelGroupOrDMByID($data['channel'])->then(function ($channel) use ($client, $data) {
-                            $message = $client->getMessageBuilder()
-                                ->addAttachment(new Attachment('', "нужно еще $this->amountOfPlayers", null, "#c4c4c4"))
-                                ->setChannel($channel)
-                                ->create();
-                            $client->postMessage($message);
-                        });
 
                     }
                 }
             }
+            if ($this->amountOfWinners == 0) {
+                foreach ($this->players as $key => $player) {
+                    $this->addLose($this->csv, $player);
+                }
+                $this->players = [];
+                $this->status = "false";
+                $this->amountOfPlayers = "0";
+                $this->amountOfWinners = "0";
+
+                $client->getChannelGroupOrDMByID($data['item']['channel'])->then(function ($channel) use ($client, $data,$slackApiClient) {
+                    $message = $client->getMessageBuilder()
+                        ->addAttachment(new Attachment('', "Ух, ну и побоище, поздравляем победителей, насмехаемся над проигравшими, БОЛЬШЕ ФУТБОЛА БОГУ ФУТБОЛА!", "", "#be00db", null, ["thumb_url" => "https://st2.depositphotos.com/1001951/6825/i/450/depositphotos_68253005-stock-photo-man-with-conceptual-spiritual-body.jpg"]))
+                        ->setChannel($channel)
+                        ->create();
+                    $client->postMessage($message);
+                });
+            }
         });
 
-        $client->on('message', function ($data) use ($client, $slackApiClient, $csv) {
+
+        $client->on('message', function ($data) use ($client, $slackApiClient) {
+            $slackApiClient->chat->postMessage(array(
+                    "channel" => "GC66DNNKS",
+                    "parse" => "full",
+                    "link_names" => 1,
+                    "mrkdwn" => true,
+                    "text" => '*bold* `code` _italic_ ~strike~ <@UBJ6FD69X> <http://foo.com/|foo> :smile: <!here>',
+                    "username" => "Wrapi Bot",
+                    "as_user" => false,
+                    "icon_url" => "http://icons.iconarchive.com/icons/ampeross/qetto/48/icon-developer-icon.png",
+                    "unfurl_links" => true,
+                    "unfurl_media" => false
+
+                )
+            );
 
 
             if ($data['text'] == "!rating") {
@@ -127,7 +149,7 @@ class Slack
         foreach ($csv as $key => $value) {
             $playerData = explode(';', $value[0]);
             if ($playerData[0] == $id) {
-                $playerData[2]--;
+                $playerData[3]++;
                 $savedItem = implode(';', $playerData);
                 $csv[$key] = (array)$savedItem;
             }
@@ -248,10 +270,8 @@ class Slack
 
         $client = $this->client;
         $slackApiClient = $this->slackApiClient;
-        $status = $this->status;
 
-
-        if ($status != "waiting" && $status != "onair") {
+        if ($this->status != "waiting" && $this->status != "onair") {
             $msg = explode('h', $data['text']);
             switch ($msg[1]) {
                 case 2:
